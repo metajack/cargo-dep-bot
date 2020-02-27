@@ -29,8 +29,8 @@ async function handle_pr(context: Context) {
   const base_file = await tmp.file();
   const head_file = await tmp.file();
 
-  await fs.writeFile(base_file.path, base_content);
-  await fs.writeFile(head_file.path, head_content);
+  await fs.writeFile(base_file.fd, base_content);
+  await fs.writeFile(head_file.fd, head_content);
 
   const { stdout, stderr } = await exec(`cargo lockfile diff ${base_file.path} ${head_file.path}`);
   const text_output = stdout.toString();
@@ -51,6 +51,9 @@ async function handle_pr(context: Context) {
     // report the analysis in a comment
     await context.github.issues.createComment(context.repo({number: pr_number, body: body}));
   }
+
+  base_file.cleanup();
+  head_file.cleanup();
 }
 
 export = (app: Application) => {
