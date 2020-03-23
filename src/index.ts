@@ -35,7 +35,7 @@ async function handle_pr(context: Context) {
 
   // fetch the latest refs
   // note: we pass the shas directly, as PR shas aren't fetched by default
-  await exec("git fetch ${base_sha} ${head_sha}", { cwd: path });
+  await exec("git fetch origin ${base_sha} ${head_sha}", { cwd: path });
 
   // grab the metadata for base
   await exec(`git checkout --force ${base_sha}`, { cwd: path });
