@@ -7,7 +7,10 @@ import tmp from 'tmp-promise';
 const exec = promisify(child_process.exec);
 
 async function handle_pr(context: Context) {
-  context.log("handling PR");
+  const { owner, repo } = context.repo();
+
+  context.log(`handling PR for ${owner}/${repo}`);
+
   const pr_number = context.payload.pull_request.number;
 
   const head_sha = context.payload.pull_request.head.sha;
@@ -18,21 +21,35 @@ async function handle_pr(context: Context) {
   const commit = await context.github.repos.getCommit(context.repo({sha: commit_ref}));
   const base_sha = commit.data.parents[0].sha;
 
-  const base_lock_params = context.repo({ref: base_sha, path: 'Cargo.lock'});
-
-  const head_lock_params = context.repo({ref: head_sha, path: 'Cargo.lock'});
-  const base_content_encoded = await context.github.repos.getContents(base_lock_params);
-  const base_content = Buffer.from(base_content_encoded.data.content, 'base64').toString()
-  const head_content_encoded = await context.github.repos.getContents(head_lock_params);
-  const head_content = Buffer.from(head_content_encoded.data.content, 'base64').toString()
-
   const base_file = await tmp.file();
   const head_file = await tmp.file();
 
-  await fs.writeFile(base_file.fd, base_content);
-  await fs.writeFile(head_file.fd, head_content);
+  // create the repo clone
+  const path = `repos/${owner}/${repo}`;
+  try {
+    await fs.access(path);
+  } catch (e) {
+    await fs.mkdir(path, { recursive: true });
+    await exec(`git clone https://github.com/${owner}/${repo} ${path}`);
+  }
 
-  const { stdout, stderr } = await exec(`cargo lockfile diff ${base_file.path} ${head_file.path}`);
+  // fetch the latest refs
+  await exec("git fetch", { cwd: path });
+
+  // grab the metadata for base
+  await exec(`git checkout --force ${base_sha}`, { cwd: path });
+  const { stdout: base_stdout } = await exec("cargo metadata --format-version 1",
+                                             { cwd: path, maxBuffer: 10 * 1024 * 1024 });
+  await fs.writeFile(base_file.path, base_stdout);
+
+  // grab the metadata for head
+  await exec(`git checkout --force ${head_sha}`, { cwd: path });
+  const { stdout: head_stdout } = await exec("cargo metadata --format-version 1",
+                                             { cwd: path, maxBuffer: 10 * 1024 * 1024 });
+  await fs.writeFile(head_file.path, head_stdout);
+
+  // run cargo guppy diff
+  const { stdout } = await exec(`cargo guppy diff ${base_file.path} ${head_file.path}`);
   const text_output = stdout.toString();
 
   if (text_output.length > 0) {
