@@ -9,17 +9,15 @@ const exec = promisify(child_process.exec);
 async function handle_pr(context: Context) {
   const { owner, repo } = context.repo();
 
-  context.log(`handling PR for ${owner}/${repo}`);
-
   const pr_number = context.payload.pull_request.number;
+
+  context.log(`handling PR #${pr_number} for ${owner}/${repo}`);
 
   const head_sha = context.payload.pull_request.head.sha;
 
   // github api lies about base sha, so we pull it from the first commit's parent
   const commits = await context.github.pullRequests.listCommits(context.repo({number: pr_number}));
-  const commit_ref = commits.data[0].sha;
-  const commit = await context.github.repos.getCommit(context.repo({sha: commit_ref}));
-  const base_sha = commit.data.parents[0].sha;
+  const base_sha = commits.data[0].parents[0].sha;
 
   const base_file = await tmp.file();
   const head_file = await tmp.file();
@@ -35,7 +33,7 @@ async function handle_pr(context: Context) {
 
   // fetch the latest refs
   // note: we pass the shas directly, as PR shas aren't fetched by default
-  await exec("git fetch origin ${base_sha} ${head_sha}", { cwd: path });
+  await exec(`git fetch origin ${base_sha} ${head_sha}`, { cwd: path });
 
   // grab the metadata for base
   await exec(`git checkout --force ${base_sha}`, { cwd: path });
